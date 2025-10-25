@@ -1,15 +1,119 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url      = env("DATABASE_URL") // Đã kết nối với Neon
+}
+
+// Enum (kiểu dữ liệu) cho Role
+enum Role {
+  ADMIN
+  DESIGNER
+}
+
+// Enum cho loại vật liệu
+enum MaterialType {
+  WOOD
+  METAL
+  PAINT
+  GLASS
+  ADHESIVE
+  PLASTIC
+  FABRIC
+  OTHER
+}
+
+// Model cho Bảng Users và Phân quyền
+model User {
+  id         String      @id @default(cuid())
+  email      String      @unique // Email phải là duy nhất
+  password   String      // Mật khẩu đã được hash
+  role       Role        @default(DESIGNER) // Role mặc định là DESIGNER
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  
+  // Relations
+  quotations Quotation[] // Một user có thể tạo nhiều báo giá
+}
+
+// Model cho Bảng Categories (Phân loại sản phẩm)
+model Category {
+  id          String         @id @default(cuid())
+  name        String         @unique // Tên danh mục (bàn, ghế, sàn, hàng rào,...)
+  description String?        // Mô tả danh mục
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  
+  // Relations
+  models      ProductModel[] // Một danh mục có nhiều model
+}
+
+// Model cho Bảng Vật liệu (Admin quản lý)
+model Material {
+  id          String         @id @default(cuid())
+  name        String         @unique // Tên vật liệu là duy nhất
+  type        MaterialType   // Loại vật liệu (gỗ, sắt, sơn,...)
+  textureUrl  String         // Đường dẫn đến file ảnh texture (.jpg, .png)
+  density     Float          // Mật độ vật liệu (kg/m³)
+  pricePerM3  Float          // Giá tiền trên mỗi mét khối (m³)
+  lossFactor  Float          @default(0) // Tỷ lệ hao hụt (%)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  
+  // Relations
+  models      ProductModel[] // Một vật liệu có thể được sử dụng cho nhiều model
+  quotations  Quotation[]    // Một vật liệu có thể có trong nhiều báo giá
+}
+
+// Model cho Bảng Model 3D (Designer quản lý)
+model ProductModel {
+  id            String      @id @default(cuid())
+  name          String      @unique
+  categoryId    String      // Foreign Key đến Category
+  materialId    String      // Foreign Key đến Material
+  modelUrl      String      // Đường dẫn đến file model 3D (.glb, .gltf, .obj)
+  width         Float       // Chiều rộng (m)
+  height        Float       // Chiều cao (m)
+  depth         Float       // Chiều sâu (m)
+  volumeFormula String      @default("width * height * depth") // Biểu thức tính thể tích
+  baseVolume    Float       // Thể tích gốc (m³) khi scale 1x1x1
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  
+  // Relations
+  category      Category    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  material      Material    @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  quotations    Quotation[] // Một model có thể có nhiều báo giá
+  
+  @@index([categoryId])
+  @@index([materialId])
+}
+
+// Model cho Bảng Báo giá
+model Quotation {
+  id           String       @id @default(cuid())
+  modelId      String       // Foreign Key đến ProductModel
+  designerId   String       // Foreign Key đến User (designer)
+  materialId   String       // Foreign Key đến Material
+  totalVolume  Float        // Tổng thể tích (m³)
+  materialCost Float        // Chi phí vật liệu
+  lossCost     Float        // Chi phí hao hụt
+  finalPrice   Float        // Tổng báo giá cuối cùng
+  notes        String?      // Ghi chú thêm
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  
+  // Relations
+  model        ProductModel @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  designer     User         @relation(fields: [designerId], references: [id], onDelete: Cascade)
+  material     Material     @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  
+  @@index([modelId])
+  @@index([designerId])
+  @@index([materialId])
 }
