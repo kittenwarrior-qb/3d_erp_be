@@ -1,119 +1,265 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
+// ==========================
+// Prisma Schema (Enhanced Version)
+// ==========================
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL") // Đã kết nối với Neon
+  url      = env("DATABASE_URL")
 }
 
-// Enum (kiểu dữ liệu) cho Role
-enum Role {
-  ADMIN
-  DESIGNER
-}
-
-// Enum cho loại vật liệu
+// ===== ENUMS =====
 enum MaterialType {
   WOOD
   METAL
-  PAINT
-  GLASS
-  ADHESIVE
   PLASTIC
   FABRIC
+  GLASS
+  CERAMIC
+  COMPOSITE
   OTHER
 }
 
-// Model cho Bảng Users và Phân quyền
+enum Axis {
+  X
+  Y
+  Z
+}
+
+enum QuoteStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+}
+
+enum ProductStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+  OUT_OF_STOCK
+}
+
+// ===== AUTHENTICATION =====
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users           User[]
+  rolePermissions RolePermission[]
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  rolePermissions RolePermission[]
+}
+
+model RolePermission {
+  id           String     @id @default(cuid())
+  roleId       String
+  permissionId String
+  createdAt    DateTime   @default(now())
+
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+}
+
 model User {
-  id         String      @id @default(cuid())
-  email      String      @unique // Email phải là duy nhất
-  password   String      // Mật khẩu đã được hash
-  role       Role        @default(DESIGNER) // Role mặc định là DESIGNER
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
-  
-  // Relations
-  quotations Quotation[] // Một user có thể tạo nhiều báo giá
+  id              String     @id @default(cuid())
+  email           String     @unique
+  password        String
+  fullName        String?
+  phone           String?
+  avatar          String?
+  roleId          String
+  status          UserStatus @default(ACTIVE)
+  emailVerifiedAt DateTime?
+  lastLoginAt     DateTime?
+  deletedAt       DateTime?  // Soft delete
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  role            Role       @relation(fields: [roleId], references: [id])
+  sessions        Session[]
+  quotes          Quote[]
+  products        Product[]  @relation("CreatedProducts")
+
+  @@index([email])
+  @@index([status])
+  @@index([roleId])
 }
 
-// Model cho Bảng Categories (Phân loại sản phẩm)
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  refreshToken String   @unique
+  userAgent    String?
+  ip           String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ===== PRODUCT DATA =====
 model Category {
-  id          String         @id @default(cuid())
-  name        String         @unique // Tên danh mục (bàn, ghế, sàn, hàng rào,...)
-  description String?        // Mô tả danh mục
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  
-  // Relations
-  models      ProductModel[] // Một danh mục có nhiều model
+  id          String     @id @default(cuid())
+  name        String     @unique
+  description String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  products    Product[]
 }
 
-// Model cho Bảng Vật liệu (Admin quản lý)
 model Material {
-  id          String         @id @default(cuid())
-  name        String         @unique // Tên vật liệu là duy nhất
-  type        MaterialType   // Loại vật liệu (gỗ, sắt, sơn,...)
-  textureUrl  String         // Đường dẫn đến file ảnh texture (.jpg, .png)
-  density     Float          // Mật độ vật liệu (kg/m³)
-  pricePerM3  Float          // Giá tiền trên mỗi mét khối (m³)
-  lossFactor  Float          @default(0) // Tỷ lệ hao hụt (%)
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  
-  // Relations
-  models      ProductModel[] // Một vật liệu có thể được sử dụng cho nhiều model
-  quotations  Quotation[]    // Một vật liệu có thể có trong nhiều báo giá
+  id            String       @id @default(cuid())
+  name          String       @unique
+  code          String       @unique // Mã vật liệu
+  type          MaterialType
+  unitPrice     Float        // đơn giá vật liệu (VD: VND/m²)
+  unit          String       @default("m²") // đơn vị tính
+  textureUrl    String?      // ảnh preview chất liệu
+  colorHex      String?      // mã màu dùng cho Three.js
+  density       Float?       // khối lượng riêng (kg/m³)
+  description   String?
+  supplier      String?      // nhà cung cấp
+  isActive      Boolean      @default(true)
+  deletedAt     DateTime?    // Soft delete
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  products      Product[]
+  quotes        Quote[]
+
+  @@index([type])
+  @@index([isActive])
+  @@index([code])
 }
 
-// Model cho Bảng Model 3D (Designer quản lý)
-model ProductModel {
-  id            String      @id @default(cuid())
-  name          String      @unique
-  categoryId    String      // Foreign Key đến Category
-  materialId    String      // Foreign Key đến Material
-  modelUrl      String      // Đường dẫn đến file model 3D (.glb, .gltf, .obj)
-  width         Float       // Chiều rộng (m)
-  height        Float       // Chiều cao (m)
-  depth         Float       // Chiều sâu (m)
-  volumeFormula String      @default("width * height * depth") // Biểu thức tính thể tích
-  baseVolume    Float       // Thể tích gốc (m³) khi scale 1x1x1
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-  
-  // Relations
-  category      Category    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  material      Material    @relation(fields: [materialId], references: [id], onDelete: Cascade)
-  quotations    Quotation[] // Một model có thể có nhiều báo giá
-  
+model Product {
+  id             String        @id @default(cuid())
+  sku            String        @unique // Mã sản phẩm
+  name           String
+  description    String?
+  imageUrl       String?
+  modelUrl       String        // file 3D (.glb / .gltf)
+  categoryId     String
+  materialId     String
+  createdById    String
+  status         ProductStatus @default(DRAFT)
+  basePrice      Float?        // Giá cơ bản
+  defaultWidth   Float
+  defaultHeight  Float
+  defaultDepth   Float
+  weight         Float?        // Trọng lượng (kg)
+  tags           String[]      // Tags cho tìm kiếm
+  viewCount      Int           @default(0)
+  deletedAt      DateTime?     // Soft delete
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  category       Category      @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  material       Material      @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  createdBy      User          @relation("CreatedProducts", fields: [createdById], references: [id])
+  parts          ProductPart[]
+  quotes         Quote[]
+  variants       ProductVariant[]
+
   @@index([categoryId])
   @@index([materialId])
+  @@index([status])
+  @@index([sku])
+  @@index([createdById])
 }
 
-// Model cho Bảng Báo giá
-model Quotation {
-  id           String       @id @default(cuid())
-  modelId      String       // Foreign Key đến ProductModel
-  designerId   String       // Foreign Key đến User (designer)
-  materialId   String       // Foreign Key đến Material
-  totalVolume  Float        // Tổng thể tích (m³)
-  materialCost Float        // Chi phí vật liệu
-  lossCost     Float        // Chi phí hao hụt
-  finalPrice   Float        // Tổng báo giá cuối cùng
-  notes        String?      // Ghi chú thêm
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-  
-  // Relations
-  model        ProductModel @relation(fields: [modelId], references: [id], onDelete: Cascade)
-  designer     User         @relation(fields: [designerId], references: [id], onDelete: Cascade)
-  material     Material     @relation(fields: [materialId], references: [id], onDelete: Cascade)
-  
-  @@index([modelId])
-  @@index([designerId])
-  @@index([materialId])
+model ProductPart {
+  id            String    @id @default(cuid())
+  productId     String
+  name          String    // ví dụ: "Chân ghế", "Mặt bàn"
+  geometryName  String    // node name trong Three.js model
+  axis          Axis      // trục có thể thay đổi kích thước
+  minScale      Float?
+  maxScale      Float?
+  priceFactor   Float?    // hệ số ảnh hưởng tới giá
+  isRequired    Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+
+  product       Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+}
+
+// ===== PRODUCT VARIANTS =====
+model ProductVariant {
+  id            String    @id @default(cuid())
+  productId     String
+  name          String    // ví dụ: "Kích thước S", "Màu đỏ"
+  sku           String    @unique
+  priceModifier Float     @default(0) // Thay đổi giá so với sản phẩm gốc
+  imageUrl      String?
+  isDefault     Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  product       Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([sku])
+}
+
+// ===== QUOTATION =====
+model Quote {
+  id            String      @id @default(cuid())
+  quoteNumber   String      @unique // Số báo giá
+  userId        String
+  productId     String
+  materialId    String
+  customWidth   Float
+  customHeight  Float
+  customDepth   Float
+  quantity      Int         @default(1)
+  unitPrice     Float
+  totalPrice    Float
+  status        QuoteStatus @default(DRAFT)
+  notes         String?
+  validUntil    DateTime?   // Thời hạn báo giá
+  approvedAt    DateTime?
+  approvedBy    String?
+  rejectedAt    DateTime?
+  rejectionReason String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  user          User        @relation(fields: [userId], references: [id])
+  product       Product     @relation(fields: [productId], references: [id])
+  material      Material    @relation(fields: [materialId], references: [id])
+
+  @@index([userId])
+  @@index([productId])
+  @@index([status])
+  @@index([quoteNumber])
+  @@index([createdAt])
 }
